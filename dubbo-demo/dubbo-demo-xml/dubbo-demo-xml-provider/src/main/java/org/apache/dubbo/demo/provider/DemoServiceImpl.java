@@ -46,7 +46,7 @@ public class DemoServiceImpl implements DemoService {
 //            } catch (InterruptedException e) {
 //                e.printStackTrace();
 //            }
-            return "async result";
+            return "我是async result";
         });
         return cf;
     }
