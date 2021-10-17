@@ -49,6 +49,7 @@ public class ExecutorUtil {
      * @param executor the Executor to shutdown
      * @param timeout the timeout in milliseconds before termination
      */
+    // 优雅关闭线程池(只针对 ExecutorService )  详见 https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ExecutorService.html
     public static void gracefulShutdown(Executor executor, int timeout) {
         if (!(executor instanceof ExecutorService) || isTerminated(executor)) {
             return;
@@ -56,6 +57,7 @@ public class ExecutorUtil {
         final ExecutorService es = (ExecutorService) executor;
         try {
             // Disable new tasks from being submitted
+            // 禁止提交新任务
             es.shutdown();
         } catch (SecurityException ex2) {
             return;
@@ -64,6 +66,7 @@ public class ExecutorUtil {
         }
         try {
             // Wait a while for existing tasks to terminate
+            // 等待现有任务终止
             if (!es.awaitTermination(timeout, TimeUnit.MILLISECONDS)) {
                 es.shutdownNow();
             }

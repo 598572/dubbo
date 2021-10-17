@@ -17,7 +17,9 @@
 package com.alibaba.dubbo.common.extensionloader.adaptive.impl;
 
 import com.alibaba.dubbo.common.URL;
+import com.alibaba.dubbo.common.extension.Adaptive;
 import com.alibaba.dubbo.common.extensionloader.adaptive.HasAdaptiveExt;
+
 
 public class HasAdaptiveExtImpl1 implements HasAdaptiveExt {
     public String echo(URL url, String s) {

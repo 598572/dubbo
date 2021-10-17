@@ -45,6 +45,9 @@ import java.util.regex.Pattern;
 
 /**
  * Load dubbo extensions
+ *
+ * 加载dubbo扩展点
+ *
  * <ul>
  * <li>auto inject dependency extension </li>
  * <li>auto wrap extension in wrapper </li>
@@ -70,6 +73,7 @@ public class ExtensionLoader<T> {
 
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<Class<?>, ExtensionLoader<?>>();
 
+    //扩展类对象的缓存
     private static final ConcurrentMap<Class<?>, Object> EXTENSION_INSTANCES = new ConcurrentHashMap<Class<?>, Object>();
 
     // ==============================
@@ -173,7 +177,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * Get activate extensions.
+     * Get activate extensions.  获取自动激活的扩展类实例
      *
      * @param url    url
      * @param values extension point names
@@ -185,19 +189,27 @@ public class ExtensionLoader<T> {
         List<T> exts = new ArrayList<T>();
         List<String> names = values == null ? new ArrayList<String>(0) : Arrays.asList(values);
         if (!names.contains(Constants.REMOVE_VALUE_PREFIX + Constants.DEFAULT_KEY)) {
+            //加载 扩展实现类 从 缓存中 or  (第一次加载的话) 从 META-INF/dubbo/ META-INF/dubbo/internal  META-INF/services/ 三个文件夹中.
             getExtensionClasses();
+
+            //遍历得到的 cachedActivates map集合
             for (Map.Entry<String, Activate> entry : cachedActivates.entrySet()) {
                 String name = entry.getKey();
                 Activate activate = entry.getValue();
+                //判断是否同组
                 if (isMatchGroup(group, activate.group())) {
+                    //判断url中的参数是否是 Activate注解类型 是的话 添加进 exts 集合
                     if (!names.contains(name)
                             && !names.contains(Constants.REMOVE_VALUE_PREFIX + name)
                             && isActive(activate, url)) {
+                        //获取对象 缓存(cachedInstances) 中没有的话 会通过反射创建
                         T ext = getExtension(name);
+
                         exts.add(ext);
                     }
                 }
             }
+            //对实现类进行排序
             Collections.sort(exts, ActivateComparator.COMPARATOR);
         }
         List<T> usrs = new ArrayList<T>();
@@ -288,6 +300,14 @@ public class ExtensionLoader<T> {
     /**
      * Find the extension with the given name. If the specified name is not found, then {@link IllegalStateException}
      * will be thrown.
+     *
+     * !!!!!!!!!!重要的方法!!!!!!!!!!!
+     *
+     * 获取普通扩展类的  <<<<对象>>>>  根据name 。 如果未找到，则 {@link IllegalStateException} 该异常将被抛出。
+     *
+     *
+     *
+     *
      */
     @SuppressWarnings("unchecked")
     public T getExtension(String name) {
@@ -296,16 +316,19 @@ public class ExtensionLoader<T> {
         if ("true".equals(name)) {
             return getDefaultExtension();
         }
+
         Holder<Object> holder = cachedInstances.get(name);
         if (holder == null) {
             cachedInstances.putIfAbsent(name, new Holder<Object>());
             holder = cachedInstances.get(name);
         }
         Object instance = holder.get();
+        //双检索
         if (instance == null) {
             synchronized (holder) {
                 instance = holder.get();
                 if (instance == null) {
+                    //没有对象的话 创建，通过反射方式
                     instance = createExtension(name);
                     holder.set(instance);
                 }
@@ -432,6 +455,12 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     *
+     * 获取自适应扩展类实现
+     *
+     * @return
+     */
     @SuppressWarnings("unchecked")
     public T getAdaptiveExtension() {
         Object instance = cachedAdaptiveInstance.get();
@@ -482,8 +511,15 @@ public class ExtensionLoader<T> {
         return new IllegalStateException(buf.toString());
     }
 
+    /**
+     * 创建扩展点的实现对象
+     *
+     * @param name
+     * @return
+     */
     @SuppressWarnings("unchecked")
     private T createExtension(String name) {
+        //先根据name获取到 class
         Class<?> clazz = getExtensionClasses().get(name);
         if (clazz == null) {
             throw findException(name);
@@ -491,12 +527,16 @@ public class ExtensionLoader<T> {
         try {
             T instance = (T) EXTENSION_INSTANCES.get(clazz);
             if (instance == null) {
+                //反射创建对象 通过Class的 newInstance 并放入缓存
                 EXTENSION_INSTANCES.putIfAbsent(clazz, clazz.newInstance());
                 instance = (T) EXTENSION_INSTANCES.get(clazz);
             }
+            //依赖注入 说白了就是 向扩展类注入其依赖的属性
             injectExtension(instance);
             Set<Class<?>> wrapperClasses = cachedWrapperClasses;
             if (wrapperClasses != null && !wrapperClasses.isEmpty()) {
+
+                //查找匹配的包装类 并注入扩展类的实例
                 for (Class<?> wrapperClass : wrapperClasses) {
                     instance = injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance));
                 }
@@ -508,24 +548,40 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * 注入扩展实现类 的依赖 ，说白了就是 解析setXxx方法，然后创建对象。并调用setXxx方法。
+     * IOC思想
+     *
+     * @param instance
+     * @return
+     */
     private T injectExtension(T instance) {
         try {
             if (objectFactory != null) {
+                //获取某示例的所有方法
                 for (Method method : instance.getClass().getMethods()) {
+                    //判断是否以set开头 并且只有一个参数，并且是public类型
                     if (method.getName().startsWith("set")
                             && method.getParameterTypes().length == 1
                             && Modifier.isPublic(method.getModifiers())) {
                         /**
                          * Check {@link DisableInject} to see if we need auto injection for this property
+                         *
+                         * 注意: !!!!!!!!如果方法上使用了 @DisableInject 注解，则不进行依赖的注入
                          */
                         if (method.getAnnotation(DisableInject.class) != null) {
                             continue;
                         }
+                        //获取参数类型 仅有一个 因为上边if里已经判断过。
                         Class<?> pt = method.getParameterTypes()[0];
                         try {
+                            //比如有 setUserService(String name); 这段代码就是将 UserService 转为 userService的
                             String property = method.getName().length() > 3 ? method.getName().substring(3, 4).toLowerCase() + method.getName().substring(4) : "";
+                            //创建依赖对象
                             Object object = objectFactory.getExtension(pt, property);
+                            //调用set方法。进行依赖的注入。
                             if (object != null) {
+                                //调用setXxx方法
                                 method.invoke(instance, object);
                             }
                         } catch (Exception e) {
@@ -552,12 +608,21 @@ public class ExtensionLoader<T> {
         return clazz;
     }
 
+    /**
+     * 获取扩展实现类 从  META-INF/dubbo/
+     *                  META-INF/dubbo/internal
+     *                  META-INF/services/     三个文件夹中
+     *
+     * @return
+     */
     private Map<String, Class<?>> getExtensionClasses() {
+        //先重缓存中取
         Map<String, Class<?>> classes = cachedClasses.get();
         if (classes == null) {
             synchronized (cachedClasses) {
                 classes = cachedClasses.get();
                 if (classes == null) {
+                    //初次加载时候，去 META-INF/dubbo/ META-INF/dubbo/internal  META-INF/services/ 三个文件夹中找
                     classes = loadExtensionClasses();
                     cachedClasses.set(classes);
                 }
@@ -570,7 +635,9 @@ public class ExtensionLoader<T> {
     private Map<String, Class<?>> loadExtensionClasses() {
         final SPI defaultAnnotation = type.getAnnotation(SPI.class);
         if (defaultAnnotation != null) {
+            //此处的value就是 @SPI(value="xxximpl") 中的value
             String value = defaultAnnotation.value();
+            // 检查是否有SPI注解。如果有，则获取注解中填写的名称，并缓存为默认实现名。 1 I如@SPI("impl")会保存impl为默认实现
             if ((value = value.trim()).length() > 0) {
                 String[] names = NAME_SEPARATOR.split(value);
                 if (names.length > 1) {
@@ -581,6 +648,7 @@ public class ExtensionLoader<T> {
             }
         }
 
+        // 加载 三个文件夹路径下面的SPI配置文件
         Map<String, Class<?>> extensionClasses = new HashMap<String, Class<?>>();
         loadDirectory(extensionClasses, DUBBO_INTERNAL_DIRECTORY);
         loadDirectory(extensionClasses, DUBBO_DIRECTORY);
@@ -588,6 +656,12 @@ public class ExtensionLoader<T> {
         return extensionClasses;
     }
 
+    /**
+     * 加载文件夹下的所有
+     *
+     * @param extensionClasses
+     * @param dir
+     */
     private void loadDirectory(Map<String, Class<?>> extensionClasses, String dir) {
         String fileName = dir + type.getName();
         try {
@@ -610,6 +684,13 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * 加载文件夹下的文件
+     *
+     * @param extensionClasses
+     * @param classLoader
+     * @param resourceURL
+     */
     private void loadResource(Map<String, Class<?>> extensionClasses, ClassLoader classLoader, java.net.URL resourceURL) {
         try {
             BufferedReader reader = new BufferedReader(new InputStreamReader(resourceURL.openStream(), "utf-8"));
@@ -651,6 +732,7 @@ public class ExtensionLoader<T> {
                     type + ", class line: " + clazz.getName() + "), class "
                     + clazz.getName() + "is not subtype of interface.");
         }
+        //判断clazz类型 来决定其是 自适应扩展类 还是自动激活的扩展类
         if (clazz.isAnnotationPresent(Adaptive.class)) {
             if (cachedAdaptiveClass == null) {
                 cachedAdaptiveClass = clazz;

@@ -126,11 +126,18 @@ public class ZookeeperRegistry extends FailbackRegistry {
         }
     }
 
+    /**
+     * 往zk注册服务的代码实现
+     * @param url
+     * @param listener
+     */
     @Override
     protected void doSubscribe(final URL url, final NotifyListener listener) {
         try {
             if (Constants.ANY_VALUE.equals(url.getServiceInterface())) {
+                //该if其实是为 dubbo-admin使用的(大多数情况下) , 该if 会全量获取（providers，consumers，routers，configurators）的信息。
                 String root = toRootPath();
+                //
                 ConcurrentMap<NotifyListener, ChildListener> listeners = zkListeners.get(url);
                 if (listeners == null) {
                     zkListeners.putIfAbsent(url, new ConcurrentHashMap<NotifyListener, ChildListener>());
@@ -164,29 +171,42 @@ public class ZookeeperRegistry extends FailbackRegistry {
                     }
                 }
             } else {
+
                 List<URL> urls = new ArrayList<URL>();
+                // toCategoriesPath 方法中会获取 url中category对应的值，如果是 Constants.ANY_VALUE 那么将会全量获取（providers，consumers，routers，configurators）
+                // 如果不是 Constants.ANY_VALUE 那么只会订阅 providers（服务提供者的信息）。
                 for (String path : toCategoriesPath(url)) {
                     ConcurrentMap<NotifyListener, ChildListener> listeners = zkListeners.get(url);
+                    // 缓存为空的话 先放入缓存  缓存结构: ConcurrentMap<URL, ConcurrentMap<NotifyListener, ChildListener>>
                     if (listeners == null) {
                         zkListeners.putIfAbsent(url, new ConcurrentHashMap<NotifyListener, ChildListener>());
                         listeners = zkListeners.get(url);
                     }
+                    // 根据 NotifyListener获取 ChildListener
                     ChildListener zkListener = listeners.get(listener);
                     if (zkListener == null) {
+                        //为 listener 添加 ChildListener
                         listeners.putIfAbsent(listener, new ChildListener() {
+                            // 创建 ChildListener 对象 ，并定义其方法的实现 ，childChanged 该方法会被 zkClient.addChildListener(path, zkListener)
+                            // 中的 createTargetChildListener 所调用。
                             @Override
                             public void childChanged(String parentPath, List<String> currentChilds) {
+                                //注册回调函数 ， 在回调时候，调用下边的 notify函数。从而动态感知服务信息。
                                 ZookeeperRegistry.this.notify(url, listener, toUrlsWithEmpty(url, parentPath, currentChilds));
                             }
                         });
                         zkListener = listeners.get(listener);
                     }
+                    // 创建持久节点
                     zkClient.create(path, false);
+                    // 订阅持久节点的直接子节点, 通过监听器的方式来感知节点是否变化，发生变化时候，
+                    // 将会回调 ChildListener 类的 childChanged函数。我理解。
                     List<String> children = zkClient.addChildListener(path, zkListener);
                     if (children != null) {
                         urls.addAll(toUrlsWithEmpty(url, path, children));
                     }
                 }
+
                 notify(url, listener, urls);
             }
         } catch (Throwable e) {

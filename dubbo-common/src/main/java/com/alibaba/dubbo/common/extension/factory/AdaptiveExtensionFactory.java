@@ -26,6 +26,16 @@ import java.util.List;
 
 /**
  * AdaptiveExtensionFactory
+ *
+ * 扩展点工厂的实现类 (默认就是他) 因为该类上有 @Adaptive注解。
+ *
+ *
+ * @Adaptive
+ *
+ * 当该注解放在实现类上，则整个实现类会直接作为默认实现，不再自动生成代码。
+ * 在扩展点接口的多个实现里，只能有一个实现上可以加@Adaptive注解。如果多个
+ * 实现类都有该注解，则会抛出异常：More than 1 adaptive class found0
+ *
  */
 @Adaptive
 public class AdaptiveExtensionFactory implements ExtensionFactory {
@@ -33,6 +43,7 @@ public class AdaptiveExtensionFactory implements ExtensionFactory {
     private final List<ExtensionFactory> factories;
 
     public AdaptiveExtensionFactory() {
+        //构造时候，加载所有的 ExtensionFactory的扩展点，可以看出 ExtensionFactory也是利用SPI机制来加载的。
         ExtensionLoader<ExtensionFactory> loader = ExtensionLoader.getExtensionLoader(ExtensionFactory.class);
         List<ExtensionFactory> list = new ArrayList<ExtensionFactory>();
         for (String name : loader.getSupportedExtensions()) {
@@ -41,9 +52,18 @@ public class AdaptiveExtensionFactory implements ExtensionFactory {
         factories = Collections.unmodifiableList(list);
     }
 
+    /**
+     * 运行时 从  ExtensionFactory 集合中寻找对应的扩展点实现
+     *
+     * @param type object type.
+     * @param name object name.
+     * @param <T>
+     * @return
+     */
     @Override
     public <T> T getExtension(Class<T> type, String name) {
         for (ExtensionFactory factory : factories) {
+            //从工厂中获取扩展点实现
             T extension = factory.getExtension(type, name);
             if (extension != null) {
                 return extension;

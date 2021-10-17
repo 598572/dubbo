@@ -139,6 +139,11 @@ public abstract class AbstractRegistry implements Registry {
         return lastCacheChanged;
     }
 
+    /**
+     * 对读取到的信息进行持久化 到磁盘
+     *
+     * @param version
+     */
     public void doSaveProperties(long version) {
         if (version < lastCacheChanged.get()) {
             return;
@@ -154,6 +159,7 @@ public abstract class AbstractRegistry implements Registry {
             }
             RandomAccessFile raf = new RandomAccessFile(lockfile, "rw");
             try {
+                //nio
                 FileChannel channel = raf.getChannel();
                 try {
                     FileLock lock = channel.tryLock();
@@ -184,12 +190,14 @@ public abstract class AbstractRegistry implements Registry {
             if (version < lastCacheChanged.get()) {
                 return;
             } else {
+
                 registryCacheExecutor.execute(new SaveProperties(lastCacheChanged.incrementAndGet()));
             }
             logger.warn("Failed to save registry store file, cause: " + e.getMessage(), e);
         }
     }
 
+    //加载磁盘上的文件
     private void loadProperties() {
         if (file != null && file.exists()) {
             InputStream in = null;
@@ -435,9 +443,12 @@ public abstract class AbstractRegistry implements Registry {
             }
             properties.setProperty(url.getServiceKey(), buf.toString());
             long version = lastCacheChanged.incrementAndGet();
+
+            // 同步保存文件
             if (syncSaveFile) {
                 doSaveProperties(version);
             } else {
+                //使用线程池异步保存文件 每个文件都会有个version,递增。
                 registryCacheExecutor.execute(new SaveProperties(version));
             }
         } catch (Throwable t) {

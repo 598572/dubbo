@@ -67,6 +67,16 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.matchers.JUnitMatchers.containsString;
 
+/**
+ * 对dubbo中的重量级人物  ExtensionLoader 的测试
+ *
+ * 需要好好看看 以了解dubbo扩展机制的实现原理。源码看完了，有时间做个笔记
+ * 对 @Activate的测试也在这个里边了。 对 @Adaptive 的测试在 ExtensionLoader_Adaptive_Test类中
+ *
+ *
+ * TODO
+ *
+ */
 public class ExtensionLoaderTest {
     @Test
     public void test_getExtensionLoader_Null() throws Exception {

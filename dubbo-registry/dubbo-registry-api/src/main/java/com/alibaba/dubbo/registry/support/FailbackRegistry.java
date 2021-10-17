@@ -42,20 +42,32 @@ import java.util.concurrent.TimeUnit;
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
 
-    // Scheduled executor service
+    // Scheduled executor service 重试线程 ，用来定时重试一些逻辑。
+    /**
+     *
+     *     针对这些进行重试
+     *
+     *     Set failedRegistered              发起注册失败的URL集合
+     *     Set failedUnregistered            取消注册失败的URL集合
+     *     ConcurrentMap> failedSubscribed   发起订阅失败的监听器集合
+     *     ConcurrentMap> failedUnsubscribed 取消订阅失败的监听器集合
+     *     ConcurrentMap» failedNotified     通知失败的URL集合
+     */
+
     private final ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(1, new NamedThreadFactory("DubboRegistryFailedRetryTimer", true));
 
     // Timer for failure retry, regular check if there is a request for failure, and if there is, an unlimited retry
+    // 保存重试后的返回信息 是一个 Future
     private final ScheduledFuture<?> retryFuture;
-
+    //发起注册失败的URL集合
     private final Set<URL> failedRegistered = new ConcurrentHashSet<URL>();
-
+    //取消注册失败的URL集合
     private final Set<URL> failedUnregistered = new ConcurrentHashSet<URL>();
-
+    //发起订阅失败的监听器集合
     private final ConcurrentMap<URL, Set<NotifyListener>> failedSubscribed = new ConcurrentHashMap<URL, Set<NotifyListener>>();
-
+    //取消订阅失败的监听器集合
     private final ConcurrentMap<URL, Set<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<URL, Set<NotifyListener>>();
-
+    //通知失败的URL集合
     private final ConcurrentMap<URL, Map<NotifyListener, List<URL>>> failedNotified = new ConcurrentHashMap<URL, Map<NotifyListener, List<URL>>>();
 
     /**
@@ -66,6 +78,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     public FailbackRegistry(URL url) {
         super(url);
         this.retryPeriod = url.getParameter(Constants.REGISTRY_RETRY_PERIOD_KEY, Constants.DEFAULT_REGISTRY_RETRY_PERIOD);
+        //创建该类的对象时候，注册重试线程池，定时类型的线程池
         this.retryFuture = retryExecutor.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
@@ -307,7 +320,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         }
     }
 
-    // Retry the failed actions
+    // Retry the failed actions 重试失败的逻辑
     protected void retry() {
         if (!failedRegistered.isEmpty()) {
             Set<URL> failed = new HashSet<URL>(failedRegistered);
@@ -446,10 +459,13 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         } catch (Throwable t) {
             logger.warn(t.getMessage(), t);
         }
+        //优雅关闭线程池的方式 值的借鉴 !!!!!!!!!!
         ExecutorUtil.gracefulShutdown(retryExecutor, retryPeriod);
     }
 
     // ==== Template method ====
+
+    // 模板方法 ，定义具体的注册逻辑，由子类（nacos,zk ,redis，等等）去实现 good ，调用则统一在该类(抽象类)中调用。
 
     protected abstract void doRegister(URL url);
 

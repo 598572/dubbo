@@ -31,6 +31,12 @@ import java.util.List;
 
 /**
  * ListenerProtocol
+ *
+ * 典型的 包装类型的扩展点
+ * 在加载时候 ，将会自动注入 protocol的实现，至于注入(或者说调用) Protocol接口的哪个实现，就要看 URL中定义的参数了
+ *
+ * 可以参见 ExtensionLoader_Adaptive_Test 的 test_getAdaptiveExtension_inject 演示方法。
+ *
  */
 public class ProtocolFilterWrapper implements Protocol {
 

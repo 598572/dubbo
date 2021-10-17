@@ -23,7 +23,7 @@ import com.alibaba.dubbo.common.extension.SPI;
 /**
  * Simple extension, has no wrapper
  */
-@SPI("impl1")
+@SPI("impl2")
 public interface SimpleExt {
     // @Adaptive example, do not specify a explicit key.
     @Adaptive
